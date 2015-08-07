@@ -28,7 +28,7 @@ void dispatch_check_rlimit_and_warn(void);
 int dispatch_addlistener(int sock);
 int dispatch_addlistener_udp(int sock);
 void dispatch_removelistener(int sock);
-int dispatch_addconnection(int sock);
+int dispatch_addconnection(int sock, struct sockaddr_storage* saddr);
 dispatcher *dispatch_new_listener(void);
 dispatcher *dispatch_new_connection(route *routes, char *allowed_chars);
 void dispatch_stop(dispatcher *d);

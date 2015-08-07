@@ -184,7 +184,7 @@ server_queuereader(void *d)
 					self->failure += self->failure >= FAIL_WAIT_TIME ? 0 : 1;
 					continue;
 				}
-				dispatch_addconnection(intconn[0]);
+				dispatch_addconnection(intconn[0], NULL);
 				self->fd = intconn[1];
 			} else if (self->ctype == CON_UDP) {
 				if ((self->fd = socket(self->saddr->ai_family,

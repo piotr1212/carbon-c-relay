@@ -15,6 +15,7 @@
  */
 
 
+#include <arpa/inet.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -40,6 +41,7 @@ enum conntype {
 
 typedef struct _connection {
 	int sock;
+	struct sockaddr_storage* saddr;
 	char takenby;   /* -2: being setup, -1: free, 0: not taken, >0: tid */
 	char buf[METRIC_BUFSIZ];
 	int buflen;
@@ -160,7 +162,7 @@ dispatch_removelistener(int sock)
  * Returns the connection id, or -1 if a failure occurred.
  */
 int
-dispatch_addconnection(int sock)
+dispatch_addconnection(int sock, struct sockaddr_storage* saddr)
 {
 	size_t c;
 
@@ -177,7 +179,7 @@ dispatch_addconnection(int sock)
 		if (connectionslen > c) {
 			/* another dispatcher just extended the list */
 			pthread_rwlock_unlock(&connectionslock);
-			return dispatch_addconnection(sock);
+			return dispatch_addconnection(sock, saddr);
 		}
 		newlst = realloc(connections,
 				sizeof(connection) * (connectionslen + CONNGROWSZ));
@@ -204,6 +206,7 @@ dispatch_addconnection(int sock)
 
 	(void) fcntl(sock, F_SETFL, O_NONBLOCK);
 	connections[c].sock = sock;
+	connections[c].saddr = saddr;
 	connections[c].buflen = 0;
 	connections[c].needmore = 0;
 	connections[c].noexpire = 0;
@@ -224,8 +227,9 @@ dispatch_addconnection(int sock)
 int
 dispatch_addlistener_udp(int sock)
 {
-	int conn = dispatch_addconnection(sock);
-	
+	struct sockaddr_storage addr;
+	int conn = dispatch_addconnection(sock, &addr);
+
 	if (conn == -1)
 		return 1;
 
@@ -289,6 +293,7 @@ dispatch_connection(connection *conn, dispatcher *self)
 	char *p, *q, *firstspace, *lastnl;
 	int len;
 	struct timeval start, stop;
+	socklen_t addrlen = sizeof(*conn->saddr);
 
 	gettimeofday(&start, NULL);
 	/* first try to resume any work being blocked */
@@ -307,8 +312,17 @@ dispatch_connection(connection *conn, dispatcher *self)
 	 * left in the buffer, try to process the buffer */
 	if (
 			(!conn->needmore && conn->buflen > 0) || 
+			/* try to read from inet socket, save src addr for UDP,
+			 * TCP addr is only available at accetp() */
+			(len = recvfrom(conn->sock,
+						conn->buf + conn->buflen,
+						(sizeof(conn->buf) - 1) - conn->buflen,
+						0,
+						(struct sockaddr*) conn->saddr,
+						&addrlen)) > 0 ||
+			/* try to read from pipe, no addr available */
 			(len = read(conn->sock,
-						conn->buf + conn->buflen, 
+						conn->buf + conn->buflen,
 						(sizeof(conn->buf) - 1) - conn->buflen)) > 0
 	   )
 	{
@@ -484,10 +498,12 @@ dispatch_runner(void *arg)
 						break;
 					if (FD_ISSET(conn->sock, &fds)) {
 						int client;
-						struct sockaddr addr;
+						struct sockaddr_storage addr;
 						socklen_t addrlen = sizeof(addr);
 
-						if ((client = accept(conn->sock, &addr, &addrlen)) < 0)
+						/* accept socket and save source addr,
+						 * TCP source addr is not available later */
+						if ((client = accept(conn->sock, (struct sockaddr*) &addr, &addrlen)) < 0)
 						{
 							logerr("dispatch: failed to "
 									"accept() new connection: %s\n",
@@ -495,7 +511,8 @@ dispatch_runner(void *arg)
 							dispatch_check_rlimit_and_warn();
 							continue;
 						}
-						if (dispatch_addconnection(client) == -1) {
+
+						if (dispatch_addconnection(client, &addr) == -1) {
 							close(client);
 							continue;
 						}
