@@ -74,6 +74,51 @@ pthread_rwlock_t connectionslock = PTHREAD_RWLOCK_INITIALIZER;
 static size_t acceptedconnections = 0;
 static size_t closedconnections = 0;
 
+/**
+ * Check if line (metric_path value timestamp) is valid.
+ */
+static int
+dispatch_validate_metric(char *metric)
+{
+	char *p, *token, *line, *s=0;
+
+	line = strdup(metric);
+
+	/* strip metric_path and value */
+	if (((token = strtok_r(line, " ", &s)) == NULL) ||
+		((token = strtok_r(NULL, " ", &s)) == NULL))
+	{
+		free(line);
+		return 1;
+	}
+
+	/* value: double float, +/-inf, nan allowed */
+	p = token;
+	errno = 0;
+	strtod(token, &p);
+	if (errno != 0 || token == p || *p != 0) {
+		free(line);
+		return 1;
+	}
+
+	/* strip timestamp */
+	if ((token = strtok_r(NULL, " ", &s)) == NULL) {
+		free(line);
+		return 1;
+	}
+
+	/* timestamp: 64 bit int (be prepared for 2038) */
+	p = token;
+	errno = 0;
+	strtol(token, &p, 10);
+	if (errno != 0 || token == p || *p != 0) {
+		free(line);
+		return 1;
+	}
+
+	free(line);
+	return 0;
+}
 
 /**
  * Helper function to try and be helpful to the user.  If errno
@@ -290,7 +335,7 @@ dispatch_process_dests(connection *conn, dispatcher *self)
 static int
 dispatch_connection(connection *conn, dispatcher *self)
 {
-	char *p, *q, *firstspace, *lastnl;
+	char *p, *q, *firstspace, *lastnl, ipstr[INET6_ADDRSTRLEN];
 	int len;
 	struct timeval start, stop;
 	socklen_t addrlen = sizeof(*conn->saddr);
@@ -349,9 +394,48 @@ dispatch_connection(connection *conn, dispatcher *self)
 					continue;
 				}
 
-				self->metrics++;
+				*q = '\0';  /* terminate string so we don't validate garbage  */
+
+				if ((filter || filter_log) &&
+					 dispatch_validate_metric(conn->metric))
+				{
+					if (filter_log) {
+						if (conn->saddr == 0)
+							sprintf(ipstr, "pipe");
+						switch (((struct sockaddr*)conn->saddr)->sa_family)
+						{
+						case AF_INET:
+						    inet_ntop(AF_INET,
+									  &(((struct sockaddr_in*)conn->saddr)->sin_addr),
+									  ipstr,
+									  INET_ADDRSTRLEN);
+							break;
+						case AF_INET6:
+						    inet_ntop(AF_INET6,
+									  &(((struct sockaddr_in6*)conn->saddr)->sin6_addr),
+									  ipstr,
+									  INET6_ADDRSTRLEN);
+							break;
+						default:
+							sprintf(ipstr, "unknown protocol");
+						}
+
+						logout("invalid line: |%s| received from: %s\n",
+								conn->metric,
+								ipstr);
+					}
+
+					if (filter) {
+						q = conn->metric;
+						firstspace = NULL;
+						continue;
+					}
+				}
+
 				*q++ = '\n';
 				*q = '\0';  /* can do this because we substract one from buf */
+
+				self->metrics++;
 
 				/* perform routing of this metric */
 				conn->destlen =

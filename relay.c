@@ -39,6 +39,8 @@
 int keep_running = 1;
 char relay_hostname[256];
 enum rmode mode = NORMAL;
+char filter = 0;
+char filter_log = 0;
 
 static char *config = NULL;
 static int batchsize = 2500;
@@ -214,7 +216,7 @@ do_version(void)
 static void
 do_usage(int exitcode)
 {
-	printf("Usage: relay [-vdst] -f <config> [-p <port>] [-w <workers>] [-b <size>] [-q <size>]\n");
+	printf("Usage: relay [-vdstFL] -f <config> [-p <port>] [-w <workers>] [-b <size>] [-q <size>]\n");
 	printf("\n");
 	printf("Options:\n");
 	printf("  -v  print version and exit\n");
@@ -232,6 +234,8 @@ do_usage(int exitcode)
 	printf("  -s  submission mode: write info about errors to log\n");
 	printf("  -t  config test mode: prints rule matches from input on stdin\n");
 	printf("  -H  hostname: override hostname (used in statistics)\n");
+	printf("  -F  filter invalid lines\n");
+	printf("  -L  log invalid lines, only in combination with -F\n");
 
 	exit(exitcode);
 }
@@ -257,7 +261,7 @@ main(int argc, char * const argv[])
 	if (gethostname(relay_hostname, sizeof(relay_hostname)) < 0)
 		snprintf(relay_hostname, sizeof(relay_hostname), "127.0.0.1");
 
-	while ((ch = getopt(argc, argv, ":hvdstf:i:l:p:w:b:q:S:c:H:")) != -1) {
+	while ((ch = getopt(argc, argv, ":hvdstLFf:i:l:p:w:b:q:S:c:H:")) != -1) {
 		switch (ch) {
 			case 'v':
 				do_version();
@@ -329,6 +333,12 @@ main(int argc, char * const argv[])
 				break;
 			case 'H':
 				snprintf(relay_hostname, sizeof(relay_hostname), "%s", optarg);
+				break;
+			case 'F':
+				filter = 1;
+				break;
+			case 'L':
+				filter_log = 1;
 				break;
 			case '?':
 			case ':':
