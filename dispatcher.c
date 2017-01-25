@@ -488,7 +488,7 @@ dispatch_connection(connection *conn, dispatcher *self, struct timeval start)
 					(*p >= 'a' && *p <= 'z') ||
 					(*p >= 'A' && *p <= 'Z') ||
 					(*p >= '0' && *p <= '9') ||
-					strchr(self->allowed_chars, *p))
+					(*p != '\0' && strchr(self->allowed_chars, *p)))
 			{
 				/* copy char */
 				*q++ = *p;
