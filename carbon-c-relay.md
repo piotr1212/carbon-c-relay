@@ -151,11 +151,12 @@ These options control the behaviour of **carbon-c-relay**.
     connection refused errors on the clients.
 
   * `-U` *bufsize*:
-    Sets the socket send/receive buffer sizes in bytes.  When unset, the
-    OS default is used.  The maximum is also determined by the OS.  The
-    sizes are set using setsockopt with the flags SO_RCVBUF and
+    Sets the TCP socket send/receive buffer sizes in bytes.  When unset,
+    the OS default is used.  The maximum is also determined by the OS.
+    The sizes are set using setsockopt with the flags SO_RCVBUF and
     SO_SNDBUF.  Setting this size may be necessary for large volume
-    scenarios, for which also `-B` might apply.
+    scenarios, for which also `-B` might apply.  Does not set UDP socket
+    buffer sizes.
 
   * `-T` *timeout*:
     Specifies the IO timeout in milliseconds used for server connections.
